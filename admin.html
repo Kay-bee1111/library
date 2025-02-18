@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library Admin Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastify-js/1.12.0/toastify.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="adminstyle.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Login Form -->
+        <div id="loginContainer" class="login-container">
+            <h2>Admin Login</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%">Login</button>
+            </form>
+            <button class="btn btn-secondary" onclick="goBack()">Go Back</button>
+        </div>
+
+        <!-- Admin Panel -->
+        <div id="adminPanel" class="admin-panel">
+            <div class="header">
+                <h1>Library Admin Dashboard</h1>
+                <div class="header-buttons">
+                    <button class="btn btn-warning" onclick="logout()">Logout</button>
+                    <button class="btn btn-secondary" onclick="goBack()">Go Back</button>
+                </div>
+            </div>
+
+            <!-- Add Book Section -->
+            <div class="add-book-form">
+                <div class="form-group">
+                    <label for="newTitle">Title</label>
+                    <input type="text" id="newTitle">
+                </div>
+                <div class="form-group">
+                    <label for="newAuthor">Author</label>
+                    <input type="text" id="newAuthor">
+                </div>
+                <div class="form-group">
+                    <label for="newGenre">Genre</label>
+                    <select id="newGenre">
+                        <option value="Fiction">Fiction</option>
+                        <option value="Non-Fiction">Non-Fiction</option>
+                        <option value="Science">Science</option>
+                        <option value="Technology">Technology</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="newOwner">Owner</label>
+                    <input type="text" id="newOwner">
+                </div>
+                <div class="form-group">
+                    <label for="newStatus">Status</label>
+                    <select id="newStatus">
+                        <option value="Available">Available</option>
+                        <option value="Borrowed">Borrowed</option>
+                        <option value="Lost">Lost</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="addNewBook()">Add Book</button>
+                <button class="btn btn-warning" id="cancelEditButton" style="display: none;" onclick="cancelEdit()">Cancel Edit</button>
+            </div>
+
+            <div class="controls">
+                <input type="text" id="searchInput" placeholder="Search books..." style="flex: 1;">
+                <select id="genreFilter">
+                    <option value="">All Genres</option>
+                    <option value="Fiction">Fiction</option>
+                    <option value="Non-Fiction">Non-Fiction</option>
+                    <option value="Science">Science</option>
+                    <option value="Technology">Technology</option>
+                </select>
+                <select id="statusFilter">
+                    <option value="">All Status</option>
+                    <option value="Available">Available</option>
+                    <option value="Borrowed">Borrowed</option>
+                    <option value="Lost">Lost</option>
+                </select>
+            </div>
+
+            <div class="table-container">
+                <table id="booksTable">
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>Author</th>
+                            <th>Genre</th>
+                            <th>Owner</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="booksTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastify-js/1.12.0/toastify.js"></script>
+    <script>
+        // Global variables
+        let token = localStorage.getItem('adminToken');
+        let books = [];
+        let editingBookId = null;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAuth();
+            setupEventListeners();
+        });
+
+        // Setup event listeners
+        function setupEventListeners() {
+            document.getElementById('searchInput').addEventListener('input', filterBooks);
+            document.getElementById('genreFilter').addEventListener('change', filterBooks);
+            document.getElementById('statusFilter').addEventListener('change', filterBooks);
+            document.getElementById('loginForm').addEventListener('submit', handleLogin);
+        }
+
+        // Authentication functions
+        function checkAuth() {
+            const loginContainer = document.getElementById('loginContainer');
+            const adminPanel = document.getElementById('adminPanel');
+            
+            if (token) {
+                loginContainer.style.display = 'none';
+                adminPanel.style.display = 'block';
+                fetchBooks();
+            } else {
+                loginContainer.style.display = 'block';
+                adminPanel.style.display = 'none';
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('http://localhost:5000/api/admin/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    token = data.token;
+                    localStorage.setItem('adminToken', token);
+                    showToast('Logged in successfully', 'success');
+                    checkAuth();
+                } else {
+                    showToast(data.message, 'error');
+                }
+            } catch (error) {
+                showToast('Login failed', 'error');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('adminToken');
+            token = null;
+            checkAuth();
+            showToast('Logged out successfully', 'success');
+        }
+
+        // Book management functions
+        async function fetchBooks() {
+            try {
+                const response = await fetch('http://localhost:5000/api/books');
+                books = await response.json();
+                displayBooks(books);
+            } catch (error) {
+                showToast('Error fetching books', 'error');
+            }
+        }
+
+        function displayBooks(booksToDisplay) {
+            const booksTableBody = document.getElementById('booksTableBody');
+            booksTableBody.innerHTML = '';
+            
+            booksToDisplay.forEach(book => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${book.title}</td>
+                    <td>${book.author}</td>
+                    <td>${book.genre}</td>
+                    <td>${book.owner}</td>
+                    <td><span class="status-badge status-${book.status.toLowerCase()}">${book.status}</span></td>
+                    <td class="action-buttons">
+                        <button class="btn btn-primary action-btn" onclick="editBook('${book._id}')">Edit</button>
+                        <button class="btn btn-danger action-btn" onclick="deleteBook('${book._id}')">Delete</button>
+                    </td>
+                `;
+                booksTableBody.appendChild(row);
+            });
+        }
+
+        function filterBooks() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const selectedGenre = document.getElementById('genreFilter').value;
+            const selectedStatus = document.getElementById('statusFilter').value;
+
+            const filteredBooks = books.filter(book => {
+                const matchesSearch = book.title.toLowerCase().includes(searchTerm) ||
+                                    book.author.toLowerCase().includes(searchTerm) ||
+                                    book.owner.toLowerCase().includes(searchTerm);
+                const matchesGenre = !selectedGenre || book.genre === selectedGenre;
+                const matchesStatus = !selectedStatus || book.status === selectedStatus;
+
+                return matchesSearch && matchesGenre && matchesStatus;
+            });
+
+            displayBooks(filteredBooks);
+        }
+
+        async function addNewBook() {
+            const newTitle = document.getElementById('newTitle').value;
+            const newAuthor = document.getElementById('newAuthor').value;
+            const newGenre = document.getElementById('newGenre').value;
+            const newOwner = document.getElementById('newOwner').value;
+            const newStatus = document.getElementById('newStatus').value;
+
+            const newBookData = { title: newTitle, author: newAuthor, genre: newGenre, owner: newOwner, status: newStatus };
+
+            try {
+                const url = editingBookId 
+                    ? `http://localhost:5000/api/books/${editingBookId}`
+                    : 'http://localhost:5000/api/books';
+
+                const method = editingBookId ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(newBookData)
+                });
+
+                if (response.ok) {
+                    showToast(editingBookId ? 'Book updated successfully' : 'Book added successfully', 'success');
+                    fetchBooks();
+                    resetForm();
+                } else {
+                    const data = await response.json();
+                    showToast(data.message || 'Failed to add/update book', 'error');
+                }
+            } catch (error) {
+                showToast('Error adding/updating book', 'error');
+            }
+        }
+
+        function resetForm() {
+            document.getElementById('newTitle').value = '';
+            document.getElementById('newAuthor').value = '';
+            document.getElementById('newGenre').value = '';
+            document.getElementById('newOwner').value = '';
+            document.getElementById('newStatus').value = 'Available';
+            document.getElementById('cancelEditButton').style.display = 'none';
+            editingBookId = null;
+        }
+
+        function cancelEdit() {
+            resetForm();
+        }
+
+        function editBook(bookId) {
+            const book = books.find(b => b._id === bookId);
+            if (book) {
+                document.getElementById('newTitle').value = book.title;
+                document.getElementById('newAuthor').value = book.author;
+                document.getElementById('newGenre').value = book.genre;
+                document.getElementById('newOwner').value = book.owner;
+                document.getElementById('newStatus').value = book.status;
+                editingBookId = bookId;
+                document.getElementById('cancelEditButton').style.display = 'inline-block';
+            }
+        }
+
+        async function deleteBook(bookId) {
+            const confirmDelete = confirm("Are you sure you want to delete this book?");
+            if (!confirmDelete) return;
+
+            try {
+                const response = await fetch(`http://localhost:5000/api/books/${bookId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    showToast('Book deleted successfully', 'success');
+                    fetchBooks();
+                } else {
+                    const data = await response.json();
+                    showToast(data.message || 'Failed to delete book', 'error');
+                }
+            } catch (error) {
+                showToast('Error deleting book', 'error');
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const backgroundColor = {
+                success: '#16a34a',
+                error: '#dc2626',
+                info: '#2563eb',
+                warning: '#ca8a04'
+            };
+
+            Toastify({
+                text: message,
+                duration: 3000,
+                gravity: 'top',
+                position: 'center',
+                backgroundColor: backgroundColor[type],
+                stopOnFocus: true
+            }).showToast();
+        }
+
+        function goBack() {
+            window.location.href = '/'; // Redirect to homepage
+        }
+    </script>
+</body>
+</html>
